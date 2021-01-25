@@ -1,0 +1,4 @@
+username,password,firstname,lastname,initials
+user1,<complexWindowsPassword>,user1,user1,usr1
+user2,<complexWindowsPassword>,user2,user2,usr2
+user3,<complexWindowsPassword>,user3,user3,usr3

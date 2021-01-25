@@ -1,0 +1,106 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "Creates an EC2 Instance - Running Windows 2019 Server Base - and associate it with a pre-configured Managed Active Directory"
+Parameters:
+  #ServerName:
+  #  Type: String
+  ImageId: 
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: "/aws/service/ami-windows-latest/Windows_Server-2019-English-Full-Base"
+  InstanceType: 
+    Type: String
+    Default: "t3.micro"
+  KeyName: 
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: "Name of a previously created SSH key"
+  SecurityGroupName:
+    Type: String
+    Default: "SGWindowsBastion"
+  SecurityGroupIngressAllowedCidrIp:
+    Type: String
+    Description: "IP address allowed to publicly access the EC2 Instance through RDP"
+    Default: "0.0.0.0/0"
+  # Values are imported from vpc templates export
+  #Vpc:
+  #  Type: AWS::EC2::VPC::Id
+  #SubnetId:
+  #  Type: AWS::EC2::Subnet::Id
+  IamInstanceProfileName:
+    Type: String
+    Default: "IamRoleWindowsBastionServer"
+  # Values are imported from managed AD templates export
+  #DirectoryId:
+  #  Type: String
+  #  Description: "Id of a previously configured Managed AD Directory Services"
+  #DirectoryName:
+  #  Type: String
+  #  Description: "Name of a previously configured Managed AD Directory Services "
+Resources:
+  instanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref roleWindowsBastionServer
+
+  roleWindowsBastionServer:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+        - "arn:aws:iam::aws:policy/AmazonSSMDirectoryServiceAccess"
+      RoleName: !Join ["-",[!Sub "${AWS::StackName}",!Ref IamInstanceProfileName]]
+  bastionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "Windows Bastion Host Security Group - To Be used for POC Only"
+      GroupName: !Ref SecurityGroupName
+      #VpcId: !Ref Vpc
+      VpcId: !ImportValue poc-workspaces-vpcId
+  bastionSecurityGroupIngressRule:
+   Type: AWS::EC2::SecurityGroupIngress
+   Properties:
+      GroupId: !Ref bastionSecurityGroup
+      IpProtocol: "tcp"
+      FromPort: 3389
+      ToPort:  3389
+      CidrIp: !Ref SecurityGroupIngressAllowedCidrIp
+  bastionSecurityGroupEgressRule:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref bastionSecurityGroup
+      IpProtocol: "-1"
+      CidrIp: "0.0.0.0/0"
+  windowsBastionServer:
+    Type: AWS::EC2::Instance
+    Properties: 
+      IamInstanceProfile: !Ref instanceProfile
+      ImageId: !Ref ImageId
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      SsmAssociations:
+        - DocumentName: "AWS-JoinDirectoryServiceDomain"
+          AssociationParameters: 
+            - Key: "directoryId"
+              Value: 
+                - !ImportValue poc-workspaces-managedAdId
+            - Key: "directoryName"
+              Value: 
+                - !ImportValue poc-workspaces-managedAdDomainName
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: true
+          DeviceIndex: "0"
+          GroupSet: 
+            - !Ref bastionSecurityGroup
+          SubnetId: !ImportValue poc-workspaces-publicSubnetOne
+      Tags: 
+        - Key: "Name"
+          #Value: !Ref ServerName
+          Value: "poc-workspaces-windowsBastionRdp"

@@ -1,0 +1,229 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "Basic multi-AZ VPC with Internet access and NAT Gateway and dedicated private subnet to be used by ManagedAD"
+Parameters:
+  CidrBlock:
+    Type: String
+    Default: "10.0.0.0/16"
+  VpcNameTag:
+    Type: String
+    Default: "WorkspacesPocVpc"
+  EnableDnsHostnames:
+    Type: String
+    Default: true
+    AllowedValues:
+      - true
+      - false
+  EnableDnsSupport:
+    Type: String
+    Default: true
+    AllowedValues:
+      - true
+      - false
+  InstanceTenancy: 
+    Type: String
+    AllowedValues:
+      - "dedicated"
+      - "default"
+    Default: "default"
+Resources:
+  workspacesvpc:
+      Type: AWS::EC2::VPC
+      Properties:
+          CidrBlock: !Ref CidrBlock
+          EnableDnsHostnames: !Ref EnableDnsHostnames
+          EnableDnsSupport: !Ref EnableDnsSupport
+          InstanceTenancy: !Ref InstanceTenancy
+          Tags: 
+          - Key: "Name"
+            Value: !Ref VpcNameTag
+  internetGateway:
+    Type: AWS::EC2::InternetGateway
+  internetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: 
+      InternetGatewayId: !Ref internetGateway
+      VpcId: !Ref workspacesvpc
+  publicSubnetOne:
+    Type: AWS::EC2::Subnet
+    Properties:
+        CidrBlock: !Select [ 0, !Cidr [ !Ref CidrBlock, 3, 8 ]]
+        VpcId: !Ref workspacesvpc
+        AvailabilityZone:
+          Fn::Select: 
+            - 0
+            - Fn::GetAZs: ""
+        Tags: 
+          - Key: "Name"
+            Value: "PublicSubnetOne"
+  publicSubnetTwo:
+    Type: AWS::EC2::Subnet
+    Properties:
+        CidrBlock: !Select [ 1, !Cidr [ !Ref CidrBlock, 4, 8 ]]
+        VpcId: !Ref workspacesvpc
+        AvailabilityZone:
+          Fn::Select: 
+            - 1
+            - Fn::GetAZs: ""
+        Tags: 
+          - Key: "Name"
+            Value: "PublicSubnetTwo"
+  managedAdSubnetOne:
+    Type: AWS::EC2::Subnet
+    Properties:
+        CidrBlock: !Select [ 2, !Cidr [ !Ref CidrBlock, 4, 8 ]]
+        VpcId: !Ref workspacesvpc
+        AvailabilityZone:
+          Fn::Select: 
+            - 0
+            - Fn::GetAZs: ""
+        Tags: 
+          - Key: "Name"
+            Value: "ManagedServicesSubnetOne"
+  managedAdSubnetTwo:
+    Type: AWS::EC2::Subnet
+    Properties:
+        CidrBlock: !Select [ 3, !Cidr [ !Ref CidrBlock, 4, 8 ]]
+        VpcId: !Ref workspacesvpc
+        AvailabilityZone:
+          Fn::Select: 
+            - 1
+            - Fn::GetAZs: ""
+        Tags: 
+          - Key: "Name"
+            Value: "ManagedServicesSubnetTwo"
+  workspacesSubnetOne:
+    Type: AWS::EC2::Subnet
+    Properties:
+        CidrBlock: !Select [ 1, !Cidr [ !Ref CidrBlock, 3, 11 ]]
+        VpcId: !Ref workspacesvpc
+        AvailabilityZone:
+          Fn::Select: 
+            - 0
+            - Fn::GetAZs: ""
+        Tags: 
+          - Key: "Name"
+            Value: "WorkloadSubnetOne"
+  workspacesSubnetTwo:
+    Type: AWS::EC2::Subnet
+    Properties:
+        CidrBlock: !Select [ 2, !Cidr [ !Ref CidrBlock, 3, 11 ]]
+        VpcId: !Ref workspacesvpc
+        AvailabilityZone:
+          Fn::Select: 
+            - 1
+            - Fn::GetAZs: ""
+        Tags: 
+          - Key: "Name"
+            Value: "WorkloadSubnetTwo"
+  # Creates an Elastic IP anvd one NAT Gateway per AZ
+  natGatewayOneEIP:
+    Type: AWS::EC2::EIP
+  natGatewayOne:
+    Type: AWS::EC2::NatGateway
+    Properties: 
+      AllocationId: !GetAtt natGatewayOneEIP.AllocationId
+      SubnetId: !Ref publicSubnetOne
+  natGatewayTwoEIP:
+    Type: AWS::EC2::EIP
+  natGatewayTwo:
+    Type: AWS::EC2::NatGateway
+    Properties: 
+      AllocationId: !GetAtt natGatewayTwoEIP.AllocationId
+      SubnetId: !Ref publicSubnetTwo
+  # Creates one public route table, one Managed AD and one private route table per AZ
+  # Associates the different subnets to the corresponding route tables 
+  privateRouteTableOne:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      Tags: 
+      - Key: "Name"
+        Value: !Join [ "-" ,[!Ref VpcNameTag, "PrivateRouteTableOne"]]
+      VpcId: !Ref workspacesvpc
+  privateRouteTableTwo:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      Tags: 
+      - Key: "Name"
+        Value: !Join [ "-" ,[!Ref VpcNameTag, "PrivateRouteTableTwo"]]
+      VpcId: !Ref workspacesvpc
+  publicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      Tags: 
+      - Key: "Name"
+        Value: !Join [ "-" ,[!Ref VpcNameTag, "PublicRouteTable"]]
+      VpcId: !Ref workspacesvpc
+  managedAdRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      Tags: 
+      - Key: "Name"
+        Value: !Join [ "-" ,[!Ref VpcNameTag, "ManagedAdRouteTable"]]
+      VpcId: !Ref workspacesvpc
+  publicSubnetOneRouteTableAssoc:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties: 
+        RouteTableId: !Ref publicRouteTable
+        SubnetId: !Ref publicSubnetOne
+  publicSubnetTwoRouteTableAssoc:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties: 
+        RouteTableId: !Ref publicRouteTable
+        SubnetId: !Ref publicSubnetTwo
+  workspacesSubnetOneTableAssoc:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties: 
+        RouteTableId: !Ref privateRouteTableOne
+        SubnetId: !Ref workspacesSubnetOne
+  workspacesSubnetTwoTableAssoc:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties: 
+        RouteTableId: !Ref privateRouteTableTwo
+        SubnetId: !Ref workspacesSubnetTwo
+  managedAdSubnetOneTableAssoc:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties: 
+        RouteTableId: !Ref managedAdRouteTable
+        SubnetId: !Ref managedAdSubnetOne
+  managedAdSubnetTwoTableAssoc:
+      Type: AWS::EC2::SubnetRouteTableAssociation
+      Properties: 
+        RouteTableId: !Ref managedAdRouteTable
+        SubnetId: !Ref managedAdSubnetTwo
+  # Creates default routes to either Internet Gateway 
+  # or NAT Gateway for the private route table
+  publicDefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+       RouteTableId: !Ref publicRouteTable
+       DestinationCidrBlock: 0.0.0.0/0
+       GatewayId: !Ref internetGateway
+  privateOneDefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+       RouteTableId: !Ref privateRouteTableOne
+       DestinationCidrBlock: 0.0.0.0/0
+       NatGatewayId: !Ref natGatewayOne
+  privateTwoDefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+       RouteTableId: !Ref privateRouteTableTwo
+       DestinationCidrBlock: 0.0.0.0/0
+       NatGatewayId: !Ref natGatewayTwo
+Outputs:
+  vpcId:
+    Value: !Ref workspacesvpc
+    Export:
+      Name: "poc-workspaces-vpcId"
+  managedADSubnetOne:
+    Value: !Ref managedAdSubnetOne
+    Export:
+      Name: "poc-workspaces-managedAdSubnetOne"
+  managedADSubnetTwo:
+    Value: !Ref managedAdSubnetTwo
+    Export:
+      Name: "poc-workspaces-managedAdSubnetTwo"
+  publicSubnetOne:
+    Value: !Ref publicSubnetOne
+    Export:
+      Name: "poc-workspaces-publicSubnetOne"

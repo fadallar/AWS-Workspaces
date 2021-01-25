@@ -1,0 +1,61 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "Set-up a Managed Microsoft AD. VPC and subnets should be created first"
+Parameters:
+  CreateAlias: 
+    Type: String
+    AllowedValues:
+      - true
+      - false
+    Default: false
+  Edition: 
+    Type: String
+    AllowedValues:
+      - "Enterprise"
+      - "Standard"
+    Default: "Standard"
+  EnableSso:
+    Type: String
+    AllowedValues:
+      - true
+      - false
+    Default: false
+  Name: 
+    Type: String
+    Description: "The fully qualified domain name for the AWS Managed Microsoft AD directory"
+  Password: 
+    Type: String
+    Description: "The password for the Manaed AD admin user"
+    NoEcho: true
+  # Subnets and VPC are commented as we use imported values from the VPC Stack
+  #subnetOne:
+  #  Type: AWS::EC2::Subnet::Id
+  #  Description: "First Subnet the managed AD Services will be associated with "
+  #subnetTwo:
+  #  Type: AWS::EC2::Subnet::Id
+  #  Description: "Second Subnet the managed AD Services will be associated with, must be in a different AZ then Subnet One"
+  #vpcId:
+  #  Type: AWS::EC2::VPC::Id
+Resources:
+  managedAd:
+    Type: AWS::DirectoryService::MicrosoftAD
+    Properties: 
+      CreateAlias: !Ref CreateAlias
+      Edition: !Ref Edition
+      EnableSso: !Ref EnableSso
+      Name: !Ref Name
+      Password: !Ref Password
+      #ShortName: !Ref ShortName
+      VpcSettings: 
+        SubnetIds: 
+          - !ImportValue poc-workspaces-managedAdSubnetOne
+          - !ImportValue  poc-workspaces-managedAdSubnetTwo
+        VpcId: !ImportValue  poc-workspaces-vpcId
+Outputs:
+  directoryId:
+    Value: !Ref managedAd
+    Export:
+      Name: "poc-workspaces-managedAdId"
+  directoryName:
+    Value: !Ref Name
+    Export:
+      Name: "poc-workspaces-managedAdDomainName"
